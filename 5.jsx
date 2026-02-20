@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Menu, X, Check, ChevronRight, User, Users, ClipboardList, 
   Settings, LogOut, ArrowRight, Activity, Calendar, FileText, 
@@ -7,115 +7,14 @@ import {
   ChefHat, Utensils, TrendingUp, Trash2, ArrowLeft, UploadCloud, FileCheck, FileSpreadsheet, Receipt, Plus, Download, Clock, Lock, Eye, Video
 } from 'lucide-react';
 
-// ==========================================
-// 1. MOCK DATABASE & SEED DATA
-// ==========================================
-const ALL_DISTRICTS = [
-  'Aveiro', 'Beja', 'Braga', 'Bragança', 'Castelo Branco', 'Coimbra',
-  'Évora', 'Faro', 'Guarda', 'Leiria', 'Lisboa', 'Portalegre', 'Porto',
-  'Santarém', 'Setúbal', 'Viana do Castelo', 'Vila Real', 'Viseu',
-  'Região Autónoma dos Açores', 'Região Autónoma da Madeira'
-];
+import Navbar from './src/components/layout/Navbar';
+import Footer from './src/components/layout/Footer';
+import ProgressChart from './src/components/shared/ProgressChart';
+import useAuth from './src/hooks/useAuth';
+import { ALL_DISTRICTS, ALLERGY_OPTIONS, DISEASE_OPTIONS, NUTRITION_SPECIALTIES, WEEK_DAYS, defaultDayPlan, defaultPlan, defaultCapacity, defaultSubscriptionSchedule, initialDB } from './src/data/appData';
+import { callGemini } from './src/services/geminiService';
 
-const ALLERGY_OPTIONS = ['Leite / Lactose', 'Glúten', 'Frutos de Casca Rija', 'Amendoim', 'Ovos', 'Soja', 'Marisco / Peixes'];
-const DISEASE_OPTIONS = ['Celíaco', 'Diabetes Tipo 1', 'Diabetes Tipo 2', 'Hipertensão', 'Colesterol Elevado', 'Síndrome do Intestino Irritável (SII)'];
-
-const NUTRITION_SPECIALTIES = ['Perda de Peso', 'Ganho de Massa Muscular', 'Nutrição Desportiva', 'Nutrição Clínica', 'Saúde Digestiva', 'Vegetarianismo / Veganismo', 'Saúde da Mulher'];
-
-const WEEK_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
-const defaultDayPlan = { breakfast: '', lunch: '', snack: '', dinner: '' };
-const defaultPlan = { 
-  calories: '', 
-  notes: '', 
-  days: WEEK_DAYS.reduce((acc, day) => ({ ...acc, [day]: { ...defaultDayPlan } }), {}) 
-};
-
-// Nova estrutura por defeito para a capacidade de produção da Cozinha
-const defaultCapacity = WEEK_DAYS.reduce((acc, day) => ({ 
-  ...acc, 
-  [day]: { breakfast: '', lunch: '', snack: '', dinner: '' } 
-}), {});
-
-// Nova estrutura para o calendário de subscrição padrão do cliente
-const defaultSubscriptionSchedule = WEEK_DAYS.reduce((acc, day) => ({ 
-  ...acc, 
-  [day]: { breakfast: false, lunch: true, snack: false, dinner: true } 
-}), {});
-
-const initialDB = {
-  users: [
-    { id: 1, firstName: 'Admin', lastName: 'Principal', email: 'admin@lisboafit.pt', role: 'ADMIN', password: '123' },
-    { id: 2, firstName: 'João', lastName: 'Nutri', email: 'joao@nutri.pt', role: 'PARTNER', password: '123' },
-    { id: 3, firstName: 'Ana', lastName: 'Silva', email: 'ana@nutri.pt', role: 'PARTNER', password: '123' },
-    { id: 4, firstName: 'Healthy Kitchen', lastName: 'LX', email: 'geral@healthykitchen.pt', role: 'PARTNER', password: '123' },
-    { id: 5, firstName: 'Carlos', lastName: 'Cliente', email: 'carlos@email.com', role: 'CLIENT', password: '123' },
-    { id: 6, firstName: 'Maria', lastName: 'Cliente', email: 'maria@email.com', role: 'CLIENT', password: '123' },
-    { id: 7, firstName: 'Pedro', lastName: 'Premium', email: 'pedro@email.com', role: 'CLIENT', password: '123' },
-    { id: 8, firstName: 'Sofia', lastName: 'Standard', email: 'sofia@email.com', role: 'CLIENT', password: '123' },
-    { id: 9, firstName: 'Tiago', lastName: 'Teste', email: 'tiago@email.com', role: 'CLIENT', password: '123' }
-  ],
-  partners: [
-    { id: 1, userId: 2, type: 'NUTRITIONIST', status: 'ACTIVE', phone: '912345678', city: 'Lisboa', details: { specialties: ['Perda de Peso', 'Nutrição Desportiva'], mode: 'Ambos' } },
-    { id: 2, userId: 3, type: 'NUTRITIONIST', status: 'PRE_APPROVED', phone: '912345679', city: 'Lisboa', details: { specialties: ['Vegetarianismo / Veganismo', 'Saúde Digestiva'], mode: 'Online' } },
-    { id: 3, userId: 4, type: 'KITCHEN', status: 'ACTIVE', phone: '912345680', city: 'Lisboa', details: { businessName: 'Healthy Kitchen LX', capacity: { ...defaultCapacity, 'Segunda': { breakfast: 20, lunch: 100, snack: 20, dinner: 80 }, 'Terça': { breakfast: 20, lunch: 100, snack: 20, dinner: 80 } }, canDoMacros: true, delivery: true, menu: [{ id: 1, name: 'Frango com Batata Doce', description: 'Peito de frango grelhado com puré de batata doce e brócolos a vapor.', category: 'Almoço/Jantar', kcal: 450, prot: 40, carb: 45, fat: 12 }] } }
-  ],
-  clients: [
-    { id: 1, userId: 5, status: 'LEAD', planType: 'STANDARD', deliveryMethod: 'DELIVERY', city: 'Lisboa', intake: { goal: 'Perder Peso', gender: 'Masculino', age: 34, weight: 85, height: 180, allergies: [], otherAllergies: '', diseases: [], otherDiseases: '' }, progress: [{ id: 1, date: '2025-11-01', weight: 88, waist: 95 }, { id: 2, date: '2025-12-01', weight: 86.5, waist: 93 }, { id: 3, date: '2026-01-01', weight: 85.2, waist: 91 }, { id: 4, date: '2026-02-15', weight: 84.0, waist: 89 }], shareProgress: false, nutritionalPlan: null },
-    { id: 2, userId: 6, status: 'PENDING_MATCH', planType: 'PREMIUM', deliveryMethod: 'PICKUP', city: 'Lisboa', intake: { goal: 'Ganhar Massa', gender: 'Feminino', age: 28, weight: 60, height: 165, allergies: ['Glúten'], otherAllergies: '', diseases: [], otherDiseases: '' }, progress: [], shareProgress: false, nutritionalPlan: null },
-    { id: 3, userId: 7, status: 'IN_PROGRESS', planType: 'PREMIUM', deliveryMethod: 'DELIVERY', city: 'Lisboa', intake: { goal: 'Performance', gender: 'Masculino', age: 25, weight: 75, height: 175, allergies: [], otherAllergies: '', diseases: [], otherDiseases: '' }, progress: [{ id: 1, date: '2025-12-10', weight: 77, waist: 85 }, { id: 2, date: '2026-01-20', weight: 76.1, waist: 84 }, { id: 3, date: '2026-02-18', weight: 75.0, waist: 82 }], shareProgress: true, nutritionalPlan: { isPlanApproved: false, calories: '2500', notes: 'Beber 2.5L de água por dia.', days: { ...defaultPlan.days, 'Segunda': { breakfast: '- 2 Ovos mexidos\n- 50g Aveia com bebida vegetal', lunch: '- 150g Peito de Frango\n- 100g Arroz Basmati\n- Salada mista', snack: '- 1 Iogurte Proteico\n- 1 Peça de fruta', dinner: '- 150g Pescada Cozida\n- Brócolos e Cenoura' }, 'Terça': { breakfast: '- Panquecas de Aveia', lunch: '- 150g Salmão\n- Batata Doce', snack: '- Frutos Secos', dinner: '- Bife de Peru\n- Salada' } } }, invoices: [{ id: 'FT 2026/01', date: '2026-01-01', amount: 249.99, status: 'Pago' }, { id: 'FT 2026/02', date: '2026-02-01', amount: 249.99, status: 'Pendente' }], paymentMethods: [{ id: 1, brand: 'Visa', last4: '4242', expiry: '12/28', isDefault: true }] },
-    { id: 4, userId: 8, status: 'ACTIVE', planType: 'STANDARD', deliveryMethod: 'PICKUP', city: 'Lisboa', intake: { goal: 'Manter', gender: 'Feminino', age: 40, weight: 65, height: 160, allergies: [], otherAllergies: '', diseases: ['Hipertensão'], otherDiseases: '' }, progress: [], shareProgress: false, nutritionalPlan: null },
-    { id: 5, userId: 9, status: 'LEAD', planType: 'STANDARD', deliveryMethod: 'DELIVERY', city: 'Lisboa', intake: { goal: 'Perder Peso', gender: 'Masculino', age: 29, weight: 90, height: 178, allergies: [], otherAllergies: '', diseases: [], otherDiseases: '' }, progress: [], shareProgress: false, nutritionalPlan: null }
-  ],
-  matchings: [
-    { id: 1, clientId: 3, nutriId: 1, kitchenId: 3, status: 'IN_PROGRESS' },
-    { id: 2, clientId: 4, nutriId: 1, kitchenId: null, status: 'COMPLETED' }
-  ],
-  consultations: [
-    { id: 1, clientId: 3, nutriId: 1, date: '2026-02-25', time: '10:00', status: 'SCHEDULED', sharedNotes: 'Trazer últimas análises clínicas para a consulta.', privateNotes: 'Cliente tem tido alguma dificuldade com a ingestão de água. Focar neste ponto.' }
-  ],
-  settings: {
-    paymentsEnabled: false,
-    availableDistricts: ['Lisboa']
-  }
-};
-
-// ==========================================
-// INTEGRAÇÃO DE INTELIGÊNCIA ARTIFICIAL (GEMINI)
-// ==========================================
-const callGemini = async (prompt) => {
-  const apiKey = ""; // A chave da API é injetada no ambiente em tempo de execução
-  
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-  const payload = {
-    contents: [{ parts: [{ text: prompt }] }],
-    systemInstruction: { parts: [{ text: "És o assistente inteligente da NutriMatch. Responde sempre em Português de Portugal de forma concisa e útil." }] }
-  };
-
-  const fetchWithRetry = async (url, options, retries = 5, delay = 1000) => {
-    try {
-      const res = await fetch(url, options);
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      return await res.json();
-    } catch (error) {
-      if (retries > 0) {
-        await new Promise(r => setTimeout(r, delay));
-        return fetchWithRetry(url, options, retries - 1, delay * 2);
-      }
-      throw error;
-    }
-  };
-
-  try {
-    const result = await fetchWithRetry(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    return result.candidates?.[0]?.content?.parts?.[0]?.text || "Sem sugestão gerada pela IA.";
-  } catch (error) {
-    return "Ocorreu um erro ao contactar a IA. Por favor, tente novamente mais tarde.";
-  }
-};
+// Dados e serviços extraídos para módulos dedicados.
 
 // ==========================================
 // 2. MAIN APP COMPONENT & STATE
@@ -140,235 +39,16 @@ export default function App() {
     window.scrollTo(0, 0);
   }, [currentRoute]);
 
-  const updateDB = (newData) => {
-    setDb({ ...db, ...newData });
-  };
+  const updateDB = useCallback((newData) => {
+    setDb((prevDb) => ({ ...prevDb, ...newData }));
+  }, []);
 
-  const login = (email, password) => {
-    const user = db.users.find(u => u.email === email && u.password === password);
-    if (user) {
-      setCurrentUser(user);
-      setCurrentRoute('DASHBOARD');
-    } else {
-      alert('Credenciais inválidas. (Use admin@lisboafit.pt / 123 para testar o admin)');
-    }
-  };
-
-  const loginWithGoogle = () => {
-    let user = db.users.find(u => u.email === 'google@email.com');
-    if (!user) {
-      user = { id: Date.now(), firstName: 'Utilizador', lastName: 'Google', email: 'google@email.com', role: 'CLIENT', password: 'mock_password_google' };
-      const newClient = {
-        id: Date.now(),
-        userId: user.id,
-        status: 'LEAD',
-        planType: 'STANDARD',
-        deliveryMethod: 'DELIVERY',
-        city: 'Lisboa',
-        intake: { goal: 'Perder Peso', gender: 'Prefiro não dizer', age: 30, weight: '', height: '', allergies: [], otherAllergies: '', diseases: [], otherDiseases: '' }
-      };
-      updateDB({ users: [...db.users, user], clients: [...db.clients, newClient] });
-    }
-    setCurrentUser(user);
-    setCurrentRoute('DASHBOARD');
-  };
-
-  const loginWithApple = () => {
-    let user = db.users.find(u => u.email === 'apple@email.com');
-    if (!user) {
-      user = { id: Date.now() + 1, firstName: 'Utilizador', lastName: 'Apple', email: 'apple@email.com', role: 'CLIENT', password: 'mock_password_apple' };
-      const newClient = {
-        id: Date.now() + 1,
-        userId: user.id,
-        status: 'LEAD',
-        planType: 'STANDARD',
-        deliveryMethod: 'DELIVERY',
-        city: 'Lisboa',
-        intake: { goal: 'Perder Peso', gender: 'Prefiro não dizer', age: 30, weight: '', height: '', allergies: [], otherAllergies: '', diseases: [], otherDiseases: '' }
-      };
-      updateDB({ users: [...db.users, user], clients: [...db.clients, newClient] });
-    }
-    setCurrentUser(user);
-    setCurrentRoute('DASHBOARD');
-  };
-
-  const logout = () => {
-    setCurrentUser(null);
-    setCurrentRoute('HOME');
-  };
-
-  // ==========================================
-  // COMPONENTES PARTILHADOS
-  // ==========================================
-  const ProgressChart = ({ data }) => {
-    if (!data || data.length < 2) {
-      return (
-        <div className="bg-gray-50 border border-dashed border-gray-300 rounded-xl p-8 text-center text-gray-500">
-          <TrendingUp className="h-10 w-10 mx-auto text-gray-300 mb-3" />
-          <p>Dados insuficientes para gerar o gráfico de evolução (mínimo de 2 registos).</p>
-        </div>
-      );
-    }
-
-    const sortedData = [...data].sort((a, b) => new Date(a.date) - new Date(b.date));
-    const weights = sortedData.map(d => d.weight);
-    const minWeight = Math.min(...weights) - 2; 
-    const maxWeight = Math.max(...weights) + 2;
-    const range = maxWeight - minWeight;
-
-    const width = 800;
-    const height = 300;
-    const paddingX = 40;
-    const paddingY = 40;
-
-    const points = sortedData.map((d, i) => {
-      const x = paddingX + (i * (width - 2 * paddingX) / (sortedData.length - 1));
-      const y = height - paddingY - (((d.weight - minWeight) / range) * (height - 2 * paddingY));
-      return { x, y, value: d.weight, date: d.date };
-    });
-
-    const polylinePoints = points.map(p => `${p.x},${p.y}`).join(' ');
-
-    return (
-      <div className="w-full overflow-x-auto bg-white border border-gray-100 rounded-xl shadow-sm p-4">
-        <svg viewBox={`0 0 ${width} ${height}`} className="w-full min-w-[500px] h-auto text-xs">
-          <line x1={paddingX} y1={paddingY} x2={width - paddingX} y2={paddingY} stroke="#f3f4f6" strokeWidth="1" />
-          <line x1={paddingX} y1={height/2} x2={width - paddingX} y2={height/2} stroke="#f3f4f6" strokeWidth="1" />
-          <line x1={paddingX} y1={height - paddingY} x2={width - paddingX} y2={height - paddingY} stroke="#f3f4f6" strokeWidth="1" />
-          
-          <text x={paddingX - 10} y={paddingY + 4} textAnchor="end" fill="#9ca3af">{maxWeight.toFixed(1)}</text>
-          <text x={paddingX - 10} y={height/2 + 4} textAnchor="end" fill="#9ca3af">{((maxWeight + minWeight) / 2).toFixed(1)}</text>
-          <text x={paddingX - 10} y={height - paddingY + 4} textAnchor="end" fill="#9ca3af">{minWeight.toFixed(1)}</text>
-
-          <polyline fill="none" stroke="#16a34a" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" points={polylinePoints} />
-          
-          {points.map((p, i) => (
-            <g key={i}>
-              <circle cx={p.x} cy={p.y} r="5" fill="#ffffff" stroke="#16a34a" strokeWidth="3" />
-              <text x={p.x} y={p.y - 15} textAnchor="middle" fill="#374151" fontWeight="bold">{p.value}kg</text>
-              <text x={p.x} y={height - paddingY + 20} textAnchor="middle" fill="#9ca3af">
-                {new Date(p.date).toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' })}
-              </text>
-            </g>
-          ))}
-        </svg>
-      </div>
-    );
-  };
-
-  // ==========================================
-  // 3. LAYOUT & NAVIGATION
-  // ==========================================
-  const Navbar = () => {
-    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-    return (
-      <nav className="bg-white shadow-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex items-center cursor-pointer" onClick={() => setCurrentRoute('HOME')}>
-              <Activity className="h-8 w-8 text-green-600 mr-2" />
-              <span className="font-bold text-xl text-gray-900">LisboaMealMatch</span>
-            </div>
-            
-            <div className="hidden md:flex items-center space-x-8">
-              {!currentUser ? (
-                <>
-                  <button onClick={() => setCurrentRoute('ABOUT_US')} className="text-gray-600 hover:text-green-600">Quem Somos</button>
-                  <button onClick={() => setCurrentRoute('HOME')} className="text-gray-600 hover:text-green-600">Para Clientes</button>
-                  <button onClick={() => { setCurrentRoute('APPLY_PARTNER'); setPartnerApplyType(null); setPartnerApplySubmitted(false); }} className="text-gray-600 hover:text-green-600">Para Parceiros</button>
-                  <button onClick={() => setCurrentRoute('LOGIN')} className="font-medium text-green-600">Entrar</button>
-                  <button onClick={() => { setPreSelectedPlan('PREMIUM'); setCurrentRoute('REGISTER_CLIENT'); }} className="bg-green-600 text-white px-4 py-2 rounded-full hover:bg-green-700 transition">
-                    Quero um Plano
-                  </button>
-                </>
-              ) : (
-                <>
-                  <span className="text-sm text-gray-500">Olá, {currentUser.firstName} {currentUser.lastName} ({currentUser.role})</span>
-                  <button onClick={() => setCurrentRoute('DASHBOARD')} className="text-gray-600 hover:text-green-600">Dashboard</button>
-                  <button onClick={logout} className="flex items-center text-red-500 hover:text-red-700">
-                    <LogOut className="h-4 w-4 mr-1"/> Sair
-                  </button>
-                </>
-              )}
-            </div>
-
-            <div className="flex items-center md:hidden">
-              <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="text-gray-600">
-                {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {mobileMenuOpen && (
-          <div className="md:hidden bg-white border-t border-gray-100 px-2 pt-2 pb-3 space-y-1 sm:px-3">
-             {!currentUser ? (
-                <>
-                  <button onClick={() => {setCurrentRoute('ABOUT_US'); setMobileMenuOpen(false);}} className="block w-full text-left px-3 py-2 text-gray-600">Quem Somos</button>
-                  <button onClick={() => {setCurrentRoute('HOME'); setMobileMenuOpen(false);}} className="block w-full text-left px-3 py-2 text-gray-600">Para Clientes</button>
-                  <button onClick={() => {setCurrentRoute('APPLY_PARTNER'); setPartnerApplyType(null); setPartnerApplySubmitted(false); setMobileMenuOpen(false);}} className="block w-full text-left px-3 py-2 text-gray-600">Para Parceiros</button>
-                  <button onClick={() => {setCurrentRoute('LOGIN'); setMobileMenuOpen(false);}} className="block w-full text-left px-3 py-2 font-medium text-green-600">Entrar</button>
-                  <button onClick={() => { setPreSelectedPlan('PREMIUM'); setCurrentRoute('REGISTER_CLIENT'); setMobileMenuOpen(false);}} className="block w-full text-center mt-4 bg-green-600 text-white px-4 py-2 rounded-lg">
-                    Quero um Plano
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button onClick={() => {setCurrentRoute('DASHBOARD'); setMobileMenuOpen(false);}} className="block w-full text-left px-3 py-2 text-gray-600">Dashboard</button>
-                  <button onClick={() => {logout(); setMobileMenuOpen(false);}} className="block w-full text-left px-3 py-2 text-red-500">Sair</button>
-                </>
-              )}
-          </div>
-        )}
-      </nav>
-    );
-  };
-
-  const Footer = () => (
-    <footer className="bg-gray-900 text-gray-400 py-12 text-sm mt-auto">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
-          <div className="md:col-span-2">
-            <h4 className="text-white font-bold text-xl mb-4 flex items-center">
-              <Activity className="h-6 w-6 text-green-500 mr-2" />
-              LisboaMealMatch
-            </h4>
-            <p className="max-w-xs text-gray-400">
-              A ligar os melhores profissionais de nutrição às cozinhas locais de excelência para lhe entregar o plano alimentar perfeito à sua porta.
-            </p>
-          </div>
-          
-          <div>
-            <h4 className="text-white font-bold mb-4 uppercase tracking-wider text-xs">Apoio ao Cliente</h4>
-            <ul className="space-y-2">
-              <li><button className="hover:text-green-400 transition-colors">Termos e Condições</button></li>
-              <li><button className="hover:text-green-400 transition-colors">Política de Privacidade</button></li>
-              <li><button className="hover:text-green-400 transition-colors">Política de Cookies</button></li>
-              <li><button className="hover:text-green-400 transition-colors">Resolução de Litígios</button></li>
-            </ul>
-          </div>
-          
-          <div>
-            <h4 className="text-white font-bold mb-4 uppercase tracking-wider text-xs">Empresa</h4>
-            <ul className="space-y-2">
-              <li className="flex items-center"><Mail className="h-4 w-4 mr-2" /> info@lisboamealmatch.pt</li>
-              <li className="flex items-center"><MapPin className="h-4 w-4 mr-2" /> Sede: Lisboa, Portugal</li>
-              <li className="flex items-center text-gray-500 mt-2">NIF: 500 000 000</li>
-            </ul>
-          </div>
-        </div>
-        
-        <div className="border-t border-gray-800 pt-8 flex flex-col md:flex-row justify-between items-center text-xs">
-          <p>&copy; {new Date().getFullYear()} LisboaMealMatch. Todos os direitos reservados.</p>
-          <p className="mt-2 md:mt-0 flex items-center">
-            <ShieldCheck className="h-4 w-4 mr-1 text-green-500" />
-            Plataforma em conformidade com o Regulamento Geral sobre a Proteção de Dados (RGPD).
-          </p>
-        </div>
-      </div>
-    </footer>
-  );
+  const { login, loginWithGoogle, loginWithApple, logout } = useAuth({
+    db,
+    setCurrentUser,
+    setCurrentRoute,
+    updateDB
+  });
 
   // ==========================================
   // 4. PUBLIC PAGES & REGISTRATION
@@ -3545,7 +3225,14 @@ export default function App() {
   // ==========================================
   return (
     <div className="min-h-screen font-sans text-gray-900 bg-white flex flex-col">
-      <Navbar />
+      <Navbar
+        currentUser={currentUser}
+        logout={logout}
+        setCurrentRoute={setCurrentRoute}
+        setPartnerApplyType={setPartnerApplyType}
+        setPartnerApplySubmitted={setPartnerApplySubmitted}
+        setPreSelectedPlan={setPreSelectedPlan}
+      />
       <main className="flex-1">
         {currentRoute === 'HOME' && <HomePage />}
         {currentRoute === 'ABOUT_US' && <AboutUsPage />}
